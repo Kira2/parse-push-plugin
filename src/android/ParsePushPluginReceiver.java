@@ -38,6 +38,7 @@ public class ParsePushPluginReceiver extends ParsePushBroadcastReceiver {
   private static int badgeCount = 0;
 
   private static final String KEY = "badge";
+  private static final String PUSH_TAG_KEY = "push_tag";
 
   @Override
   protected void onPushReceive(Context context, Intent intent) {
@@ -215,11 +216,13 @@ public class ParsePushPluginReceiver extends ParsePushBroadcastReceiver {
   }
 
   private static String getNotificationTag(Context context, Intent intent) {
-    return getPushData(intent).optString("title", getAppName(context));
+    JSONObject pnData = getPushData(intent);
+    return getNotificationTag(context, pnData);
   }
 
   private static String getNotificationTag(Context context, JSONObject pnData) {
-    return pnData.optString("title", getAppName(context));
+    String title = pnData.optString("title", getAppName(context));
+    return pnData.optString(PUSH_TAG_KEY, title);
   }
 
   private static int nextCount(String pnTag) {
