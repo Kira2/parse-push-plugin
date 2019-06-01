@@ -18,6 +18,7 @@ import com.parse.Parse;
 import com.parse.ParsePush;
 import com.parse.ParseInstallation;
 
+import android.content.Context;
 import android.util.Log;
 
 public class ParsePushPlugin extends CordovaPlugin {
@@ -35,7 +36,6 @@ public class ParsePushPlugin extends CordovaPlugin {
 
   private static CordovaWebView gWebView;
   private static boolean gForeground = false;
-  private static boolean helperPause = false;
 
   public static final String LOGTAG = "ParsePushPlugin";
 
@@ -72,7 +72,7 @@ public class ParsePushPlugin extends CordovaPlugin {
       return true;
     }
     if (action.equals(ACTION_RESET_BADGE)) {
-      ParsePushPluginReceiver.resetBadge(this.cordova.getActivity().getApplicationContext());
+      this.resetBadge(this.cordova.getActivity().getApplicationContext());
       return true;
     }
     if (action.equals(ACTION_REGISTER_FOR_PN)) {
@@ -123,6 +123,14 @@ public class ParsePushPlugin extends CordovaPlugin {
     callbackContext.success();
   }
 
+  private void resetBadge(final Context appContext) {
+    cordova.getThreadPool().execute(new Runnable() {
+      public void run() {
+        ParsePushPluginReceiver.resetBadge(appContext);
+      }
+    });
+  }
+
   private void registerDeviceForPN(final CallbackContext callbackContext) {
     //
     // just a stub to keep API consistent with iOS.
@@ -138,16 +146,15 @@ public class ParsePushPlugin extends CordovaPlugin {
   }
 
   public static void jsCallback(JSONObject _json, String pushAction) {
-    List<PluginResult> cbParams = new ArrayList<PluginResult>();
-    cbParams.add(new PluginResult(PluginResult.Status.OK, _json));
-    cbParams.add(new PluginResult(PluginResult.Status.OK, pushAction));
     //avoid blank
     PluginResult dataResult;
     if (pushAction.equals("OPEN")) {
-      if (helperPause)
-        dataResult = new PluginResult(PluginResult.Status.OK, _json);
-      else
-        dataResult = new PluginResult(PluginResult.Status.OK, cbParams);
+      List<PluginResult> cbParams = new ArrayList<PluginResult>();
+      cbParams.add(new PluginResult(PluginResult.Status.OK, _json));
+      cbParams.add(new PluginResult(PluginResult.Status.OK, pushAction));
+
+      dataResult = new PluginResult(PluginResult.Status.OK, cbParams);
+
     } else {
       dataResult = new PluginResult(PluginResult.Status.OK, _json);
     }
@@ -182,7 +189,6 @@ public class ParsePushPlugin extends CordovaPlugin {
   public void onPause(boolean multitasking) {
     super.onPause(multitasking);
     gForeground = false;
-    helperPause = true;
   }
 
   @Override
@@ -196,7 +202,6 @@ public class ParsePushPlugin extends CordovaPlugin {
     gWebView = null;
     gForeground = false;
     gEventCallback = null;
-    helperPause = false;
 
     super.onDestroy();
   }
