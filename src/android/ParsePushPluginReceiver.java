@@ -8,11 +8,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.app.PendingIntent;
 import android.app.Notification;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.graphics.Color;
 
 import github.taivo.parsepushplugin.ParsePushConfigReader;
 
 import android.support.v4.app.NotificationCompat;
+import android.support.v4.app.TaskStackBuilder;
 
 import android.net.Uri;
 import android.util.Log;
@@ -22,6 +25,8 @@ import org.json.JSONException;
 
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+
+import android.os.Bundle;
 
 import java.util.List;
 import java.util.Random;
@@ -33,6 +38,8 @@ import me.leolin.shortcutbadger.ShortcutBadger;
 public class ParsePushPluginReceiver extends ParsePushBroadcastReceiver {
   public static final String LOGTAG = "ParsePushPluginReceiver";
   public static final String RESOURCE_PUSH_ICON_COLOR = "parse_push_icon_color";
+  private static final String DEFAULT_CHANNEL_ID = "parse_push";
+  private static final String DEFAULT_CHANNEL_TITLE = "Default Channel";
 
   private static JSONObject MSG_COUNTS = new JSONObject();
   private static int badgeCount = 0;
@@ -63,13 +70,50 @@ public class ParsePushPluginReceiver extends ParsePushBroadcastReceiver {
       }
       else {
         // check if this is a silent notification
-        Notification notification = getNotification(context, intent);
+        Notification notification = getNotification(context, intent).build();
 
         if (notification != null) {
           // use tag + notification id=0 to limit the number of notifications in the tray
           // (older messages with the same tag and notification id will be replaced)
           NotificationManager notifManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-          notifManager.notify(getNotificationTag(context, intent), 0, notification);
+
+          if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+
+            String id = context.getPackageName();
+            CharSequence name = getAppName(context);
+            String description = notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString();
+
+            int colorId = context.getResources().getIdentifier(RESOURCE_PUSH_ICON_COLOR, "color", context.getPackageName());
+            int color = (colorId != 0) ? context.getResources().getColor(colorId) : Color.BLUE;
+
+            int importance = NotificationManager.IMPORTANCE_HIGH;
+            NotificationChannel mChannel = new NotificationChannel(id, name, importance);
+
+            mChannel.setDescription(description);
+            mChannel.enableLights(true);
+            mChannel.setLightColor(color);
+            notifManager.createNotificationChannel(mChannel);
+
+            Intent activityIntent = new Intent(context, getActivity(context, intent));
+
+            PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, activityIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+            NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(context, id)
+                    .setSmallIcon(getSmallIconId(context, intent))
+                    .setBadgeIconType(getSmallIconId(context, intent))
+                    .setChannelId(id)
+                    .setContentTitle(name)
+                    .setAutoCancel(true)
+                    .setContentIntent(pendingIntent)
+                    .setNumber(1)
+                    .setColor(color)
+                    .setContentText(description)
+                    .setWhen(System.currentTimeMillis());
+
+            notifManager.notify((int) (System.currentTimeMillis() / 1000), notificationBuilder.build());
+          }
+          else {
+            notifManager.notify(getNotificationTag(context, intent), 0, notification);
+          }
         }
 
         //
@@ -79,7 +123,9 @@ public class ParsePushPluginReceiver extends ParsePushBroadcastReceiver {
         // to see if it works
         //
         intent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
-        setResultCode(Activity.RESULT_OK);
+        if (isOrderedBroadcast()) {
+          setResultCode(Activity.RESULT_OK);
+        }
       }
     }
   }
@@ -95,7 +141,7 @@ public class ParsePushPluginReceiver extends ParsePushBroadcastReceiver {
 
     activityIntent.putExtras(intent).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_NEW_TASK);
 
-    ParseAnalytics.trackAppOpened(intent);
+    ParseAnalytics.trackAppOpenedInBackground(intent);
 
     // allow a urlHash parameter for hash as well as query params.
     // This lets the app know what to do at coldstart by opening a PN.
@@ -114,7 +160,7 @@ public class ParsePushPluginReceiver extends ParsePushBroadcastReceiver {
   }
 
   @Override
-  protected Notification getNotification(Context context, Intent intent) {
+  protected NotificationCompat.Builder getNotification(Context context, Intent intent) {
     //
     // Build a notification entry for the tray
     //
@@ -145,7 +191,24 @@ public class ParsePushPluginReceiver extends ParsePushBroadcastReceiver {
     PendingIntent deleteIntent = PendingIntent.getBroadcast(context, deleteIntentRequestCode, dIntent,
         PendingIntent.FLAG_UPDATE_CURRENT);
 
-    NotificationCompat.Builder builder = new NotificationCompat.Builder(context);
+    NotificationCompat.Builder builder;
+
+    if (android.os.Build.VERSION.SDK_INT < 26){
+      builder = new NotificationCompat.Builder(context);
+    }
+    else {
+      int importance = NotificationManager.IMPORTANCE_HIGH;
+      NotificationManager notifManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+      NotificationChannel mChannel = notifManager.getNotificationChannel(DEFAULT_CHANNEL_ID);
+
+      if (mChannel == null) {
+        mChannel = new NotificationChannel(DEFAULT_CHANNEL_ID, DEFAULT_CHANNEL_TITLE, importance);
+        mChannel.enableVibration(true);
+        mChannel.setVibrationPattern(new long[]{200, 300, 200});
+        notifManager.createNotificationChannel(mChannel);
+      }
+      builder = new NotificationCompat.Builder(context, DEFAULT_CHANNEL_ID);
+    }
 
     // check if this is a silent notification
     boolean isSilent = !pnData.has("title") && !pnData.has("alert");
@@ -193,13 +256,14 @@ public class ParsePushPluginReceiver extends ParsePushBroadcastReceiver {
     }
 
     if (!isSilent) {
-      return builder.build();
+      return builder;
     }
 
     return null;
   }
 
-  private static JSONObject getPushData(Intent intent) {
+  @Override
+  protected JSONObject getPushData(Intent intent) {
     JSONObject pnData = null;
     try {
       pnData = new JSONObject(intent.getStringExtra(KEY_PUSH_DATA));
@@ -215,7 +279,7 @@ public class ParsePushPluginReceiver extends ParsePushBroadcastReceiver {
     return (String) appName;
   }
 
-  private static String getNotificationTag(Context context, Intent intent) {
+  private String getNotificationTag(Context context, Intent intent) {
     JSONObject pnData = getPushData(intent);
     return getNotificationTag(context, pnData);
   }
@@ -250,8 +314,7 @@ public class ParsePushPluginReceiver extends ParsePushBroadcastReceiver {
   /**
   * Sets the badge of the app icon.
   *
-  * @param args
-  * The new badge number
+  * @param badgeCount The new badge number
   * @param ctx
   * The application context
   */
