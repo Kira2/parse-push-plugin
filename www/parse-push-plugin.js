@@ -1,3 +1,4 @@
+cordova.define("parse-push-plugin.ParsePushPlugin", function(require, exports, module) {
 var serviceName = 'ParsePushPlugin';
 
 //
@@ -7,7 +8,7 @@ var serviceName = 'ParsePushPlugin';
 require('cordova/channel').onCordovaReady.subscribe(function() {
 	var jsCallback = function(pn, pushAction) {
       if(ParsePushPlugin.DEBUG){
-         console.log("Cordova callback: " + pushAction + "|" + JSON.stringify(pn));
+         console.log("[ParsePushPlugin] Cordova callback: " + pushAction + "|" + JSON.stringify(pn));
       }
 
 		if(pn !== null){
@@ -18,7 +19,7 @@ require('cordova/channel').onCordovaReady.subscribe(function() {
 				// Relaying a push OPEN action, allows the app to resume and use javascript to navigate
 				// to a different screen.
 				//
-            ParsePushPlugin.softTrigger(ParsePushPlugin._openEvent, pn);
+                ParsePushPlugin.softTrigger(ParsePushPlugin._openEvent, pn);
 			} else{
 				//
 				//an eventKey can be registered with the register() function to trigger
@@ -66,7 +67,7 @@ var ParsePushPlugin = {
    unsubscribe: function(channel, successCb, errorCb) {
       cordova.exec(successCb, errorCb, serviceName, 'unsubscribe', [ channel ]);
    },
-   
+
    resetBadge: function(successCb, errorCb) {
        cordova.exec(successCb, errorCb, serviceName, 'resetBadge', []);
    },
@@ -172,7 +173,7 @@ var EventMixin = {
      */
     trigger: function(events) {
       if(this.DEBUG){
-         console.log("enter ParsePushPlugin.trigger: " + events);
+         console.log("[ParsePushPlugin] enter ParsePushPlugin.trigger: " + events);
       }
 
       var event, node, calls, tail, args, all, rest;
@@ -206,7 +207,7 @@ var EventMixin = {
       }
 
       if(this.DEBUG){
-         console.log("exit ParsePushPlugin.trigger: " + events);
+         console.log("[ParsePushPlugin] exit ParsePushPlugin.trigger: " + events);
       }
       return this;
    },
@@ -218,7 +219,9 @@ var EventMixin = {
       //where the main app takes too long to setup handlers.
       //
       if(this._callbacks){
+        if (this.DEBUG) console.log('[ParsePushPlugin] Soft trigger calls trigger');
          this.trigger.apply(this, arguments);
+
       } else{
          var self = this;
          var triggerArgs = arguments;
@@ -230,3 +233,4 @@ var EventMixin = {
 };
 
 module.exports = poorManExtend(ParsePushPlugin, EventMixin);
+});
