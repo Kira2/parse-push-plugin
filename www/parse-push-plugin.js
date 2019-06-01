@@ -46,7 +46,20 @@ var ParsePushPlugin = {
 	_receiveEvent: 'receivePN',
 	_customEventKey: 'event', //default key for custom events associated with each PN, set this to anything you see fit
 
-   DEBUG: false,
+    _isReady: false,
+    _isReadyTriggerArgs: null,
+
+   DEBUG: true,
+
+   setIsReady: function(isReady) {
+	  this._isReady = isReady;
+
+	  if (this._isReady && this._isReadyTriggerArgs) {
+	    if (this.DEBUG) console.log('[ParsePushPlugin] The App is ready, trigger the pending event');
+	    this.trigger.apply(this, this._isReadyTriggerArgs);
+	    this._isReadyTriggerArgs = null;
+	  }
+   },
 
    getInstallationId: function(successCb, errorCb) {
       cordova.exec(successCb, errorCb, serviceName, 'getInstallationId', []);
@@ -94,7 +107,6 @@ function poorManExtend(object, source){
 var eventSplitter = /\s+/;
 var slice = Array.prototype.slice;
 var EventMixin = {
-   _coldStartDelayMs: 1000,
 	on: function(events, callback, context) {
 
       var calls, event, node, tail, list;
@@ -223,11 +235,10 @@ var EventMixin = {
          this.trigger.apply(this, arguments);
 
       } else{
-         var self = this;
-         var triggerArgs = arguments;
-         window.setTimeout(function(){
-            self.trigger.apply(self, triggerArgs);
-         }, self._coldStartDelayMs || 200);
+         if (!this._isReady) {
+            if (this.DEBUG) console.log('[ParsePushPlugin] Still waiting for App to be ready...');
+            this._isReadyTriggerArgs = arguments;
+         }
       }
    }
 };
